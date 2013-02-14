@@ -1,0 +1,137 @@
+#!/bin/bash
+
+test $# -eq 0 && set -- -h
+
+OPTS_SPEC="\
+git subtree-export <subdir> <remote> [<branch>]
+--
+h,help        show the help
+d,debug       show debug messages
+"
+eval "$(echo "$OPTS_SPEC" | git rev-parse --parseopt -- "$@" || echo exit $?)"
+
+####################################################################################################
+
+debug() {
+    if test -n "$debug"; then
+        echo "$@" >&2
+    fi
+}
+
+assert() {
+    if "$@"; then
+        :
+    else
+        die "assertion failed: " "$@"
+    fi
+}
+
+# copy_commit <commit> <tree> ["-p<parent1> -p<parent2>..."]
+copy_commit() {
+    # We're going to set some environment vars here, so
+    # do it in a subshell to get rid of them safely later
+    debug copy_commit "{$1}" "{$2}" "{$3}"
+    git log -1 --pretty=format:'%an%n%ae%n%ad%n%cn%n%ce%n%cd%n%s%n%n%b' "$1" |
+    (
+        read GIT_AUTHOR_NAME
+        read GIT_AUTHOR_EMAIL
+        read GIT_AUTHOR_DATE
+        read GIT_COMMITTER_NAME
+        read GIT_COMMITTER_EMAIL
+        read GIT_COMMITTER_DATE
+        export  GIT_AUTHOR_NAME \
+            GIT_AUTHOR_EMAIL \
+            GIT_AUTHOR_DATE \
+            GIT_COMMITTER_NAME \
+            GIT_COMMITTER_EMAIL \
+            GIT_COMMITTER_DATE
+        cat |
+        git commit-tree "$2" $3  # reads the rest of stdin
+    ) || die "Can't copy commit $1"
+}
+
+toptree_for_commit() {
+    commit="$1"
+    git log -1 --pretty=format:'%T' "$commit" -- || exit $?
+}
+
+subtree_for_commit() {
+    (
+        commit="$1"
+        dir="$2"
+        git ls-tree "$commit" -- "$dir" |
+        while read mode type tree name; do
+            assert [ "$name" = "$dir" ]
+            assert [ "$type" = "tree" -o "$type" = "commit" ]
+            [ "$type" = "commit" ] && continue  # ignore submodules
+            echo $tree
+            break
+        done
+    )
+}
+
+####################################################################################################
+
+quiet=
+debug=
+
+while [ $# -gt 0 ]; do
+    opt="$1"; shift
+    case "$opt" in
+        -q) quiet=true ;;
+        -d) debug=true ;;
+        --) break ;;
+        *) die "Unexpected option: $opt" ;;
+    esac
+done
+
+####################################################################################################
+
+PATH=$PATH:$(git --exec-path)
+. git-sh-setup
+
+require_work_tree
+
+subdir="$1"
+remote="$2"
+branch="$3"
+
+test -n "$subdir" || die "You must provide <subdir>."
+test -n "$remote" || die "You must provide <remote>."
+test -n "$branch" || branch=master
+
+base="$(git merge-base HEAD $remote/$branch)"
+test -n "$base" || die "No common commits found between HEAD and $remote/$branch."
+debug "base = $base"
+
+debug "Exporting commits:"
+
+new_commit_count=0
+
+new_commit="$(
+    last_commit="$base"
+    git rev-list --topo-order --reverse --no-merges "^$base" HEAD -- "$subdir" |
+    while read rev; do
+        git log -1 --pretty=oneline $rev
+        tree="$(subtree_for_commit $rev "$subdir")"
+        if test -n "$tree"; then
+            debug "  subtree is: $tree"
+            last_commit="$(copy_commit "$rev" "$tree" "-p $last_commit")"
+            echo "$last_commit"
+            debug "  new commit is: $last_commit"
+        else
+            debug "  no subtree found"
+        fi
+    done | tail -1
+)"
+
+debug "new_commit = {$new_commit}"
+if test "$new_commit" '!=' "$base"; then
+    new_commit_count=$(git rev-list $base..$new_commit | wc -l)
+    new_commit_count=$(expr $new_commit_count)
+    git log -$new_commit_count $new_commit
+    git push $remote $new_commit:$branch
+    echo "FINISHED. Push this commit: $new_commit"
+else
+    echo "No new commits found."
+fi
