@@ -78,7 +78,7 @@ Nevertheless, if you do find yourself with both incoming (“unimported”) and 
 
 First, running `git subtree-export` will fail if there are incoming changes. That's good, because you don't want to accidentally overwrite them.
 
-Second, `git subtree-import` will overwrite any outgoing changes without warning. The changes still remain in your version history, but the merge commit will appear to revert them. So if you're not sure, it's a good idea to run `git subtree-export` before `git subtree-import`.
+Second, `git subtree-import` will overwrite any outgoing changes without warning. This sucks and should be fixed. (The changes still remain in your version history, but the merge commit will appear to revert them.) So if you're not sure, it's a good idea to run `git subtree-export` before `git subtree-import`.
 
 Third, the way you resolve this is by running `git subtree-export` into a separate branch in your destination repository (_mixins_), then merging the branch there. Like this:
 
