@@ -129,16 +129,7 @@ Other options:
 
 If no `<subdir>` is specified, the command should operate on all subdirectories mentioned in git config. Unfortunately, this mode is not implemented yet.
 
-If you specify `--url <url`, Git remote named `<remote>` will be created automatically if it does not exist, or, if the remote already exists, its url will be updated as necessary.
-
-Import a subproject added as remote `<remote>` (branch `<branch>`) into directory `<subdir>` of the current branch:
-
-
-Export any changes made in directory `<subdir>` on the current branch into an external subproject pointed to by remote `<remote>` (branch `<branch>`):
-
-    git subtree-export <subdir> <remote> [<branch>]
-
-If the `<branch>` is omitted, it defaults to master.
+If you specify `--url <url>`, a Git remote named `<remote>` will be created automatically if it does not exist. Or, if the remote does exist, its url will be updated when necessary.
 
 
 ## History importing method
