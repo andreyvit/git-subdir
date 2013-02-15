@@ -130,8 +130,6 @@ Because all of these values are saved into your `git config`, you only need to r
         FYI, here's the most recently imported/exported commit:
         f395909 - blah (1 seconds ago) <Andrey Tarantsov>
 
-(WARNING WARNING: right now, because of an implementation bug, this warning is triggered way more often than necessary. You need to use `--force` in many import operations. I plan to work on an updated version soon.)
-
 Before we get to it, let me advise you to avoid this case. You're free to make changes in _mysite_ and export them to _mixins_, and you're free to make changes in _mixins_ and import them into _mysite_, but you need to stick to one of these options at a time to avoid unnecessary trouble.
 
 Nevertheless, if you do find yourself with both incoming (“unimported”) and outgoing (“unexported”) changes, here's what you need to know.
@@ -162,6 +160,7 @@ I might automate this process in the future, perhaps as part of the import comma
 Here's how git-subdir is different from git-subtree:
 
 * does not store any kind of metadata, does not annotate commits — your repository has no trace of git-subdir (we do store the value of `--remote` and `--branch` in `git config`, so that you don't need to type it all over again)
+* does not even care that commits match, as long as they point to the same subdir tree
 * does not currently support ‘squashing’ imported version history
 * does not support splitting an existing repository (git-subtree works fine for that)
 * importing does not rely on subtree merge, so you can sync changes two-way without stupid conflicts
