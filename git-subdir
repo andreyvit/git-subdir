@@ -47,6 +47,7 @@ sh_escape_all() {
 # GENERIC GIT HELPER FUNCTIONS
 
 fancy_oneline='format:    %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset%n'
+squashmsg_format='format:* %h %s <%ae>%n'
 
 # copy_commit <commit> <tree> ["-p<parent1> -p<parent2>..."]
 copy_commit() {
@@ -127,13 +128,13 @@ find_outgoing_commits() {
 # subdir=<subdir> remote=<remote> branch=<branch> base=<base-commit> find_incoming_commits
 find_incoming_commits() {
     base_arg=""
-    test -n "$base" && base_arg="^$base"
+    test -n "$base_in_subdir" && base_arg="^$base_in_subdir"
     git rev-list --topo-order --reverse --no-merges $base_arg "$remote/$branch"
 }
 
 # subdir=<subdir> base=<base-commit> outgoing_commits=<commits> create_outgoing_commits
 create_outgoing_commits() {
-    last_commit="$base"
+    last_commit="$incoming_HEAD"
     echo "$outgoing_commits" |
     while read commit; do
         git log -1 --pretty=oneline $commit
@@ -149,8 +150,17 @@ create_outgoing_commits() {
     done
 }
 
-# handle_subdir_option <subdir> <option> <value> <default>
-# $1 = <subdir>, $2 = <option>, $3 = <value>, $4 = <default>
+format_squashed_incoming_commit_message() {
+    echo "$import_message"
+    echo
+    echo "Contains the following commits:"
+    for commit in $incoming_commits; do
+        git log -1 --pretty="$squashmsg_format" $commit
+    done
+}
+
+# handle_subdir_option <subdir> <option> <value> <default> <force-save?>
+# $1 = <subdir>, $2 = <option>, $3 = <value>, $4 = <default>, $5 = <force-save?>
 handle_subdir_option() {
     saved="$(git config "subdir.$1.$2")"
     if test -n "$3"; then
@@ -159,25 +169,41 @@ handle_subdir_option() {
     elif test -n "$saved"; then
         echo "$saved"
     else
-        test "$4" = "$saved" || git config "subdir.$1.$2" "$4"
+        if $5; then
+            test "$4" = "$saved" || git config "subdir.$1.$2" "$4"
+        fi
         echo "$4"
     fi
 }
 
-run() {(
+run() {
     comment="$1"; shift
     dry=""; $dry_run && dry="(dry) "
-    echo "$comment:"
-    echo "    ${dry}$(sh_escape_all "$@")"
-    $dry_run || "$@"
-)}
+    echo "$comment:" >&2
+    echo "    ${dry}$(sh_escape_all "$@")" >&2
+    if ! $dry_run; then
+        "$@" || die "** Command failed. Stop."
+    fi
+}
+
+run_with_result() {
+    comment="$1"; shift
+    dry=""; $dry_run && dry="(dry) "
+    echo "$comment:" >&2
+    echo "    ${dry}$(sh_escape_all "$@")" >&2
+    if ! $dry_run; then
+        result="$("$@")" || die "** Command failed. Stop."
+    else
+        result=""
+    fi
+}
 
 run_or_skip() {
     if $1; then
         comment="$2"; shift; shift; shift
         run "$comment" "$@"
     else
-        echo "$3"
+        echo "$3" >&2
     fi
 }
 
@@ -189,10 +215,17 @@ process_subdir() {(
     # remove trailing slash, it will interfer with --prefix option to git read-tree
     subdir="${subdir%/}"
 
-    remote="$(handle_subdir_option "$subdir" remote "$remote" "$(basename "$subdir")")"
-    branch="$(handle_subdir_option "$subdir" branch "$branch" master)"
+    remote="$(handle_subdir_option "$subdir" remote "$remote" "$(basename "$subdir")" true)"
+    branch="$(handle_subdir_option "$subdir" branch "$branch" master true)"
+    method="$(handle_subdir_option "$subdir" method "$method" squash true)"
 
-    debug "Processing folder $subdir against remote branch $remote/$branch."
+    debug "Processing folder $subdir against remote branch $remote/$branch, method = $method."
+
+    case "$method" in
+        merge | squash) initial_method=$method;;
+        squash-initial-then-merge)  method=merge; initial_method=squash;;
+        *) die "** Unknown --method '$method'. Run with -h for usage.";;
+    esac
 
     saved_url="$(git config "remote.$remote.url")"
     if test -n "$url"; then
@@ -210,6 +243,8 @@ process_subdir() {(
     dry_run=false run_or_skip "$fetch" "Fetching updates from the server" "Skipping 'git fetch' because of --no-fetch." \
         git fetch "$remote"
 
+    HEAD="$(git rev-parse HEAD)"
+
     # base="$(git merge-base HEAD $remote/$branch)"
     read base_tree base_in_subdir base < <(find_base_commit)
     if test -n "$base"; then
@@ -219,6 +254,17 @@ process_subdir() {(
         git log -1 --pretty="$fancy_oneline" "$base_in_subdir"
     else
         echo "No imported or exported commits found. Perhaps this is a first-time import."
+    fi
+
+    # if there's no base commit, this is an initial import
+    test -z "$base" && initial=true || initial=false
+
+    $initial && method=$initial_method
+
+    if $initial; then
+        import_message="Add a copy of $remote/$branch"
+    else
+        import_message="Merge the latest version of $remote/$branch"
     fi
 
     outgoing_commits="$(find_outgoing_commits)"
@@ -232,6 +278,8 @@ process_subdir() {(
     fi
 
     incoming_commits="$(find_incoming_commits)"
+    incoming_HEAD="$(git rev-parse $remote/$branch)"
+    test -n "$incoming_HEAD" && incoming_tree="$(toptree_for_commit $incoming_HEAD)"
     if test -n "$incoming_commits"; then
         echo "Incoming commits:"
         for commit in $incoming_commits; do
@@ -282,17 +330,32 @@ process_subdir() {(
 
     if test -n "$incoming_commits"; then
         if test "$mode" = import -o "$mode" = sync; then
-            run "Merge with the remote branch" \
-                git merge -s ours --no-commit $remote/$branch
+            case $method in
+            squash)
+                run "Delete the previous version (so that it does not interfere with git read-tree)" \
+                    git rm --ignore-unmatch -r -q $subdir
 
-            run "Delete the previous version (so that it does not interfere with git read-tree)" \
-                git rm --ignore-unmatch -r -q $subdir
+                run "Copy the new version into the subdir" \
+                    git read-tree --prefix=$subdir/ -u $remote/$branch
 
-            run "Copy the new version into the subdir" \
-                git read-tree --prefix=$subdir/ -u $remote/$branch
+                run "Commit the changes" \
+                    git commit -m "$(format_squashed_incoming_commit_message)"
+                ;;
 
-            run "Commit the changes" \
-                git commit -m "Merge the latest version of $remote/$branch"
+            merge)
+                run "Merge with the remote branch" \
+                    git merge -s ours --no-commit $remote/$branch
+
+                run "Delete the previous version (so that it does not interfere with git read-tree)" \
+                    git rm --ignore-unmatch -r -q $subdir
+
+                run "Copy the new version into the subdir" \
+                    git read-tree --prefix=$subdir/ -u $remote/$branch
+
+                run "Commit the changes" \
+                    git commit -m "$import_message"
+                ;;
+            esac
         else
             echo
             echo "Skipping import because it was not requested; use -S or -I to run import."
@@ -320,6 +383,9 @@ Q,status      display the current status (the default mode), aka 'query' mode
 r,remote=     remote name (defaults to the last component of <subdir>)
 b,branch=     remote branch name (defaults to master)
 url=          remote url (if you want git-subdir to set up git-remote automatically)
+M,method=     importing method, defaults to squash
+
+  Available methods for -M: merge, squash, squash-initial-then-merge.
 
   Other options:
 F,no-fetch    don't run 'git fetch'
@@ -349,6 +415,7 @@ quiet=
 debug=
 remote=
 branch=
+method=
 url=
 fetch=true
 dry_run=false
@@ -373,6 +440,8 @@ while [ $# -gt 0 ]; do
         -I) mode=import;;
         -E) mode=export;;
         --force) force=true;;
+        --no-force) force=false;;
+        -M) method="$1"; shift;;
         --) break;;
         *) die "Unexpected option: $opt" ;;
     esac
@@ -381,7 +450,6 @@ done
 if $force && ! test "$mode" = "import"; then
     die "--force can only be used in --import/-I mode."
 fi
-
 
 if test $# -gt 0; then
     subdir="$1"

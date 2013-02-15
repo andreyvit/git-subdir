@@ -111,7 +111,7 @@ run git-fancylog
 step "Adding foo to bar"
 
 run_cd $test_dir/bar
-run $root_dir/git-subdir foo/ --url $test_dir/foo -I
+run $root_dir/git-subdir -d foo/ --url $test_dir/foo -I "$@"
 run git-fancylog
 
 
@@ -131,7 +131,7 @@ run git commit -m "set f = 45"
 run git-fancylog
 
 run_cd $test_dir/bar
-run $root_dir/git-subdir foo/ -I
+run $root_dir/git-subdir -d foo/ -I
 
 
 ####################################################################################################
@@ -166,7 +166,7 @@ run git commit -m "set f = 48"
 run git-fancylog
 
 run_cd $test_dir/bar
-run $root_dir/git-subdir foo/ -I
+run $root_dir/git-subdir -d foo/ -I
 run git-fancylog
 
 
@@ -197,7 +197,7 @@ run git commit -m "set f = 50"
 run git-fancylog
 
 run_cd $test_dir/bar
-run $root_dir/git-subdir foo/ -I
+run $root_dir/git-subdir -d foo/ -I
 run git-fancylog
 
 # run git subtree push --prefix=foo foo master
