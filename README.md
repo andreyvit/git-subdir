@@ -19,14 +19,14 @@ Compared to other approaches, git-subdir:
 
 Caveats:
 
-* Requires manual intervention to merge changes, when there are both incoming and outgoing ones. This isn't a conceptual problem, just something that hasn't been implemented yet. See a dedicated warning section below.
+* Requires manual intervention to merge changes when there are both incoming and outgoing ones. This isn't a conceptual problem, just something that hasn't been implemented yet. See a dedicated warning section below.
 
 
 ## Implementation details
 
-git-subdir does not try to map commits across repositories. Instead, it only cares about the changes that need to be imported or exported. (We call them _incoming_ and _outgoing_ changes respectively.)
+git-subdir does not try to map commits across repositories. Instead, it only cares about the changes that need to be imported or exported — we'll call those _incoming_ and _outgoing_ changes respectively.
 
-To determine the incoming and outgoing changes, git-subdir finds the most recent commit in _embedded_ repository that matches the _content_ of the specified `<subdir>` of the _master_ repository at some point in history.
+To determine the incoming and outgoing changes, git-subdir finds the most recent commit in the embedded repositorythat matches the _content_ of the specified `<subdir>` of the master repository _at some point in history_.
 
 (Let that sink in.)
 
@@ -56,10 +56,9 @@ Here's how you set that up, assuming that _mixins_ repository lives on GitHub.
 First, add a copy of _mixins_ to _mysite_:
 
     $ cd ~/mysite
-    $ git remote add mixins
     $ git subdir lib/mixins --url https://github.com/youraccount/mixins.git -I
 
-Bingo; `lib/mixins` now contains a copy of _mixins_ (including the entire version history). There's a merge commit that binds the two repositories together.
+Bingo; `lib/mixins` now contains a copy of _mixins_. There's a merge commit that binds the two repositories together.
 
 Proceeding to the cool stuff! Make a change in _mixins_...
 
