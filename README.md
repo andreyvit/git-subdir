@@ -17,6 +17,10 @@ Compared to other approaches, git-subdir:
 * Will happily pick up the results of `git-subtree`, subtree merge or even the plain old `cp`.
 * Both imports and exports commits, providing instant two-way syncing.
 
+Caveats:
+
+* Requires manual intervention to merge changes, when there are both incoming and outgoing ones. This isn't a conceptual problem, just something that hasn't been implemented yet. See a dedicated warning section below.
+
 
 ## Implementation details
 
