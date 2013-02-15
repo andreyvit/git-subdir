@@ -111,8 +111,7 @@ run git-fancylog
 step "Adding foo to bar"
 
 run_cd $test_dir/bar
-run git remote add foo $test_dir/foo
-run $root_dir/git-subtree-import foo/ foo master
+run $root_dir/git-subdir foo/ --url $test_dir/foo -I
 run git-fancylog
 
 
@@ -132,9 +131,7 @@ run git commit -m "set f = 45"
 run git-fancylog
 
 run_cd $test_dir/bar
-run git fetch foo
-run git merge -s subtree --log=10 -m "Update foo subproject" foo/master
-run git-fancylog
+run $root_dir/git-subdir foo/ -I
 
 
 ####################################################################################################
@@ -152,7 +149,8 @@ run git add foo/f
 run git commit -m "set f = 47"
 run git-fancylog
 
-run $root_dir/git-subtree-export -d foo foo master
+run $root_dir/git-subdir -d foo -E
+run git-fancylog
 
 run_cd $test_dir/foo
 run git-fancylog
@@ -168,7 +166,7 @@ run git commit -m "set f = 48"
 run git-fancylog
 
 run_cd $test_dir/bar
-run $root_dir/git-subtree-import foo/ foo master
+run $root_dir/git-subdir foo/ -I --force
 run git-fancylog
 
 
@@ -182,7 +180,8 @@ run git add b foo/f
 run git commit -m "set f = 49 and b = 13"
 run git-fancylog
 
-run $root_dir/git-subtree-export -d foo foo master
+run $root_dir/git-subdir -d foo -E
+run git-fancylog
 
 run_cd $test_dir/foo
 run git-fancylog
@@ -198,7 +197,7 @@ run git commit -m "set f = 50"
 run git-fancylog
 
 run_cd $test_dir/bar
-run $root_dir/git-subtree-import foo/ foo master
+run $root_dir/git-subdir foo/ -I --force
 run git-fancylog
 
 # run git subtree push --prefix=foo foo master

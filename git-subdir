@@ -1,0 +1,365 @@
+#!/bin/bash
+shopt -s extglob
+
+
+####################################################################################################
+# GENERIC FUNCTIONS
+
+debug() {
+    if test -n "$debug"; then
+        echo "$@" >&2
+    fi
+}
+
+assert() {
+    if "$@"; then
+        :
+    else
+        die "assertion failed: " "$@"
+    fi
+}
+
+sh_escape() {
+    if test "${1//[ \'\"\\]/}" = "$1"; then
+        echo -n "$1"
+    else
+        if test "${1//\"/}" = "$1"; then
+            echo -n "\"$1\""
+        else
+            if test "${1//\'/}" = "$1"; then
+                echo -n "'$1'"
+            else
+                printf "%q" "$1"
+            fi
+        fi
+    fi
+}
+
+sh_escape_all() {
+    for arg in "$@"; do
+        sh_escape "$arg"
+        echo -n " "
+    done
+}
+
+
+####################################################################################################
+# GENERIC GIT HELPER FUNCTIONS
+
+fancy_oneline='format:    %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset%n'
+
+# copy_commit <commit> <tree> ["-p<parent1> -p<parent2>..."]
+copy_commit() {
+    # We're going to set some environment vars here, so
+    # do it in a subshell to get rid of them safely later
+    debug copy_commit "{$1}" "{$2}" "{$3}"
+    git log -1 --pretty=format:'%an%n%ae%n%ad%n%cn%n%ce%n%cd%n%s%n%n%b' "$1" |
+    (
+        read GIT_AUTHOR_NAME
+        read GIT_AUTHOR_EMAIL
+        read GIT_AUTHOR_DATE
+        read GIT_COMMITTER_NAME
+        read GIT_COMMITTER_EMAIL
+        read GIT_COMMITTER_DATE
+        export  GIT_AUTHOR_NAME \
+            GIT_AUTHOR_EMAIL \
+            GIT_AUTHOR_DATE \
+            GIT_COMMITTER_NAME \
+            GIT_COMMITTER_EMAIL \
+            GIT_COMMITTER_DATE
+        cat |
+        git commit-tree "$2" $3  # reads the rest of stdin
+    ) || die "Can't copy commit $1"
+}
+
+toptree_for_commit() {
+    commit="$1"
+    git log -1 --pretty=format:'%T' "$commit" -- || exit $?
+}
+
+subtree_for_commit() {
+    (
+        commit="$1"
+        dir="$2"
+        git ls-tree "$commit" -- "$dir" |
+        while read mode type tree name; do
+            assert [ "$name" = "$dir" ]
+            assert [ "$type" = "tree" -o "$type" = "commit" ]
+            [ "$type" = "commit" ] && continue  # ignore submodules
+            echo $tree
+            break
+        done
+    )
+}
+
+
+####################################################################################################
+# GITDIR-SPECIFIC HELPERS
+
+# subdir=<subdir> remote=<remote> branch=<branch> base=<base-commit> find_outgoing_commits
+find_outgoing_commits() {
+    if test -n "$base"; then
+        git rev-list --topo-order --reverse --no-merges "^$base" HEAD -- "$subdir"
+    fi
+}
+
+# subdir=<subdir> remote=<remote> branch=<branch> base=<base-commit> find_incoming_commits
+find_incoming_commits() {
+    base_arg=""
+    test -n "$base" && base_arg="^$base"
+    git rev-list --topo-order --reverse --no-merges $base_arg "$remote/$branch"
+}
+
+# subdir=<subdir> base=<base-commit> outgoing_commits=<commits> create_outgoing_commits
+create_outgoing_commits() {
+    last_commit="$base"
+    echo "$outgoing_commits" |
+    while read commit; do
+        git log -1 --pretty=oneline $commit
+        tree="$(subtree_for_commit $commit "$subdir")"
+        if test -n "$tree"; then
+            debug "    subtree is: $tree"
+            last_commit="$(copy_commit "$commit" "$tree" "-p $last_commit")"
+            echo "$last_commit"
+            debug "    new commit is: $last_commit"
+        else
+            debug "    no subtree found"
+        fi
+    done
+}
+
+# handle_subdir_option <subdir> <option> <value> <default>
+# $1 = <subdir>, $2 = <option>, $3 = <value>, $4 = <default>
+handle_subdir_option() {
+    saved="$(git config "subdir.$1.$2")"
+    if test -n "$3"; then
+        test "$3" = "$saved" || git config "subdir.$1.$2" "$3"
+        echo "$3"
+    elif test -n "$saved"; then
+        echo "$saved"
+    else
+        test "$4" = "$saved" || git config "subdir.$1.$2" "$4"
+        echo "$4"
+    fi
+}
+
+run() {(
+    comment="$1"; shift
+    dry=""; $dry_run && dry="(dry) "
+    echo "$comment:"
+    echo "    ${dry}$(sh_escape_all "$@")"
+    $dry_run || "$@"
+)}
+
+run_or_skip() {
+    if $1; then
+        comment="$2"; shift; shift; shift
+        run "$comment" "$@"
+    else
+        echo "$3"
+    fi
+}
+
+####################################################################################################
+# OPERATIONS
+
+# subdir=<subdir> [url=<url>] [remote=<remote>] [branch=<branch>] process_subdir
+process_subdir() {(
+    # remove trailing slash, it will interfer with --prefix option to git read-tree
+    subdir="${subdir%/}"
+
+    remote="$(handle_subdir_option "$subdir" remote "$remote" "$(basename "$subdir")")"
+    branch="$(handle_subdir_option "$subdir" branch "$branch" master)"
+
+    debug "Processing folder $subdir against remote branch $remote/$branch."
+
+    saved_url="$(git config "remote.$remote.url")"
+    if test -n "$url"; then
+        if test -z "$saved_url"; then
+            dry_run=false run "Add remote '$remote'" \
+                git remote add "$remote" "$url"
+        elif ! test "$url" = "$saved_url"; then
+            run "Update remote '$remote' to point to a new URL" \
+                git remote set-url "$remote" "$url"
+        fi
+    elif test -z "$saved_url"; then
+        die "** Remote '$remote' does not exist. Please provide --url <url> or set up the remote yourself."
+    fi
+
+    dry_run=false run_or_skip "$fetch" "Fetching updates from the server" "Skipping 'git fetch' because of --no-fetch." \
+        git fetch "$remote"
+
+    base="$(git merge-base HEAD $remote/$branch)"
+
+    outgoing_commits="$(find_outgoing_commits)"
+    if test -n "$outgoing_commits"; then
+        echo "Outgoing commits:"
+        for commit in $outgoing_commits; do
+            git log -1 --pretty="$fancy_oneline" $commit
+        done
+    else
+        echo "No outgoing commits."
+    fi
+
+    incoming_commits="$(find_incoming_commits)"
+    if test -n "$incoming_commits"; then
+        echo "Incoming commits:"
+        for commit in $incoming_commits; do
+            git log -1 --pretty="$fancy_oneline" $commit
+        done
+    else
+        echo "No incoming commits."
+    fi
+
+    if test -n "$incoming_commits" -a -n "$outgoing_commits"; then
+        if $force; then
+            echo "    There are both incoming and outgoing commits."
+            echo "    Proceeding because of --force."
+        else
+            echo "Houston, we have a problem!"
+            echo
+            echo "    There are both incoming and outgoing commits."
+            echo "    Please read the docs about resolving this case."
+            echo "    Refusing to do anything to avoid screwing up."
+            echo
+            echo "    You can use --force to override, but pls be very sure!"
+            echo
+            echo "    FYI, here's the most recently imported/exported commit:"
+            git log -1 --pretty="$fancy_oneline" "$base"
+            exit 1
+        fi
+    fi
+
+    if test -n "$outgoing_commits"; then
+        if test "$mode" = export -o "$mode" = sync; then
+            echo
+            echo "Exporting commits:"
+            new_commit="$(create_outgoing_commits | tail -1)"
+            if ! test "$new_commit" = "$base"; then
+                new_commit_count=$(expr $(git rev-list $base..$new_commit | wc -l))
+                git log --pretty=oneline -$new_commit_count $new_commit
+                run "Record export as a merge commit" \
+                    git merge -s ours -m "Push changes to $remote/$branch" $new_commit
+                run "Pushing new commits to the server" \
+                    git push $remote $new_commit:$branch
+                echo "Export finished."
+            else
+                echo "No new commits found."
+            fi
+        else
+            echo
+            echo "Skipping export because it was not requested; use -S or -E to run export."
+        fi
+    fi
+
+    if test -n "$incoming_commits"; then
+        if test "$mode" = import -o "$mode" = sync; then
+            run "Merge with the remote branch" \
+                git merge -s ours --no-commit $remote/$branch
+
+            run "Delete the previous version (so that it does not interfere with git read-tree)" \
+                git rm --ignore-unmatch -r -q $subdir
+
+            run "Copy the new version into the subdir" \
+                git read-tree --prefix=$subdir/ -u $remote/$branch
+
+            run "Commit the changes" \
+                git commit -m "Merge the latest version of $remote/$branch"
+        else
+            echo
+            echo "Skipping import because it was not requested; use -S or -I to run import."
+        fi
+    fi
+)}
+
+
+####################################################################################################
+# PARSE COMMAND LINE
+
+OPTS_SPEC="\
+git subdir [--sync | --import | --export] [<subdir> [--remote <remote>] [--branch branch] [--url <url>]]
+
+Syncs subdirectories of the current repo with their own separate repositories.
+See https://github.com/andreyvit/git-subdir for details.
+--
+  Mode of operation:
+S,sync        sync (import and/or export)
+I,import      import changes
+E,export      export changes
+Q,status      display the current status (the default mode), aka 'query' mode
+
+  Subdirectory options (saved into git config automatically):
+r,remote=     remote name (defaults to the last component of <subdir>)
+b,branch=     remote branch name (defaults to master)
+url=          remote url (if you want git-subdir to set up git-remote automatically)
+
+  Other options:
+F,no-fetch    don't run 'git fetch'
+fetch         override --no-fetch
+n,dry-run     don't execute anything, merely print the commands that would be executed
+force         force importing even in the presence of incoming changes
+
+  General options:
+h,help        show the help
+d,debug       show debug messages
+"
+eval "$(echo "$OPTS_SPEC" | git rev-parse --parseopt -- "$@" || echo exit $?)"
+
+
+####################################################################################################
+# GIT STARTUP
+
+PATH=$PATH:$(git --exec-path)
+. git-sh-setup
+require_work_tree
+
+
+####################################################################################################
+# PROCESS COMMAND LINE OPTIONS
+
+quiet=
+debug=
+remote=
+branch=
+url=
+fetch=true
+dry_run=false
+mode=status
+force=false
+
+echo "args: $*"
+
+while [ $# -gt 0 ]; do
+    opt="$1"; shift
+    case "$opt" in
+        -q) quiet=true;;
+        -d) debug=true;;
+        -r) remote="$1"; shift;;
+        -b) branch="$1"; shift;;
+        --url) url="$1"; shift;;
+        --fetch) fetch=true;;
+        -F) fetch=false;;
+        -n) dry_run=true;;
+        -Q) mode=status;;
+        -S) mode=sync;;
+        -I) mode=import;;
+        -E) mode=export;;
+        --force) force=true;;
+        --) break;;
+        *) die "Unexpected option: $opt" ;;
+    esac
+done
+
+if $force && ! test "$mode" = "import"; then
+    die "--force can only be used in --import/-I mode."
+fi
+
+
+if test $# -gt 0; then
+    subdir="$1"
+    test -n "$subdir" || die "You must provide a non-empty <subdir>."
+
+    process_subdir "$subdir"
+else
+    echo "Processing all subdirs is not implemented yet. Run 'git subdir -h' for usage."
+fi

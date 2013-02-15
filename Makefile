@@ -1,13 +1,10 @@
 .PHONY: link unlink
 
 install:
-	cp $$(pwd)/git-subtree-import $${prefix-/usr/local}/bin/git-subtree-import
-	cp $$(pwd)/git-subtree-export $${prefix-/usr/local}/bin/git-subtree-export
+	cp $$(pwd)/git-subdir $${prefix-/usr/local}/bin/git-subdir
 
 link:
-	ln -s $$(pwd)/git-subtree-import $${prefix-/usr/local}/bin/git-subtree-import
-	ln -s $$(pwd)/git-subtree-export $${prefix-/usr/local}/bin/git-subtree-export
+	ln -s $$(pwd)/git-subdir $${prefix-/usr/local}/bin/git-subdir
 
 uninstall:
-	rm -f $${prefix-/usr/local}/bin/git-subtree-import
-	rm -f $${prefix-/usr/local}/bin/git-subtree-export
+	rm -f $${prefix-/usr/local}/bin/git-subdir
