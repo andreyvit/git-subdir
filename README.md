@@ -245,9 +245,9 @@ When importing commits from the embedded repository, git-subdir can use one of t
 
 Like other subdir options, the chosen method is saved in your git options and used in subsequent invocations.
 
-Please note that you're free to change the importing method down the line. In fact, you are free to merge, split, rebase, amend the imported commits as you like, or even do crazy stuff like `git filter-branch`, as long as your changes don't affect the actual content of `<subdir>`.
+Please note that you're free to change the importing method down the line. In fact, you are free to merge, split, rebase, amend the imported commits as you like, or even do crazy stuff like `git filter-branch`, as long as your changes don't affect the actual content of `<subdir>` (or, alternatively, as long as you execute the same filter-branch in the embedded repository).
 
-The beauty of git-subdir is that it does not care about the commits when importing and exporting changes; all it cares about is the actual data in your `<subdir>` matching the data in the imported repository at some point in history.
+The beauty of git-subdir is that it does not care about the historical commits when importing and exporting changes; all it cares about is for the actual data in your `<subdir>` to match the data in the imported repository at some point in history.
 
 
 ## Sharing git-subdir config
