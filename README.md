@@ -140,17 +140,110 @@ If no `<subdir>` is specified, the command should operate on all subdirectories 
 If you specify `--url <url>`, a Git remote named `<remote>` will be created automatically if it does not exist. Or, if the remote does exist, its url will be updated when necessary.
 
 
-## History importing method
+## Choosing the history importing method
 
-When importing commits from the remote repository like _mixins_, git-subdir can use one of the following approaches:
+When importing commits from the embedded repository, git-subdir can use one of the following approaches to deal with the imported history. Illustrated with sample git logs of the master repository.
 
-* `--method=squash` will combine all the incoming commits into a single commit in your repository; this is useful if you want your history to stay clean, and don't care about individual incoming commits too much
-* `--method=linear` will add all imported commits into your repository linearly (as if you committed the changes yourself), prefixing each commit message with remote name
-* `--method=merge` will save the entire history of the remote repository into your one, and will add a merge commit on every import, joining your repository history with the history of the imported repository (like git-subtree does by default); this is useful if you want to see the individual commits of the imported repository within your master repository
-* `--method=squash,linear` will use `squash` for the initial import and `linear` after that (useful if you care about individual commits in the future, but don't want to import the history of prior changes)
-* `--method=squash,merge` will use `squash` for the initial import and `merge` after that (same as the prior one, but for those who prefer non-linear history)
+* `--method=squash` merges (squashes) the incoming commits into a single commit on every import. The history stays linear, and you don't see the individual imported commits:
 
-Like other subdir options, the chosen method is saved in your git options and will be used until you specify another one.
+        * 3dc1607 - (HEAD, master) [foo] Update to ee41ff0
+        * 764582d - set f = 49 and b = 13
+        * 184ec32 - [foo] Update to d22c2bd
+        * 86456aa - set f = 47
+        * 4943c34 - set f = 46
+        * e238c48 - [foo] Update to 65c0d23
+        * 3797560 - [foo] Import 9e22367
+        * cf21d4e - set b = 12
+        * 054345a - add b = 11
+
+* `--method=linear` adds individual incoming commits into your repository; the history stays linear:
+
+        * 0fa70d1 - (HEAD, master) [foo] set f = 50
+        * 66d8704 - set f = 49 and b = 13
+        * 78d47b9 - [foo] set f = 48
+        * d24051f - set f = 47
+        * d2bd079 - set f = 46
+        * 18b63a7 - [foo] set f = 45
+        * 63d779d - [foo] set f = 44
+        * 000a770 - [foo] set f = 43
+        * 2b0d4eb - [foo] add f = 42
+        * 01f6488 - set b = 12
+        * b7ef91c - add b = 11
+
+* `--method=merge` adds _unmodified_ incoming commits to your history, and then adds one merge commit per import to join the histories.
+
+    This is how subtree merges (`git merge -s subtree`) normally work in Git, and also the default mode of git-subtree. Your history becomes a mess, and the exported commits will be duplicated.
+
+    You _might_ find this mode appealing because it provides a better separation between the repositories and still keeps the individual commits; it also leaves enough metadata for subtree merges to be operational in the future.
+
+        *   83ef37f - (HEAD, master) [foo] Update to 9cbe394
+        |\
+        | * 9cbe394 - (foo/master) set f = 50
+        | * e9af0a6 - set f = 49 and b = 13
+        * | 0c54b1b - set f = 49 and b = 13
+        * |   e0c67cf - [foo] Update to 0eeff53
+        |\ \
+        | |/
+        | * 0eeff53 - set f = 48
+        | * d276859 - set f = 47
+        | * f14606d - set f = 46
+        * | 8c4b5d6 - set f = 47
+        * | 2eb3fa1 - set f = 46
+        * |   c53fe8f - [foo] Update to 58be0c4
+        |\ \
+        | |/
+        | * 58be0c4 - set f = 45
+        | * f22eb8e - set f = 44
+        * |   cbfc588 - [foo] Import 99c9be7
+        |\ \
+        | |/
+        | * 99c9be7 - set f = 43
+        | * f521f9d - add f = 42
+        * 7cbc4f1 - set b = 12
+        * 66ccc94 - add b = 11
+
+    ↑↑↑↑ do you _really_ want your history to look like that?
+
+* `--method=squash,linear` uses `squash` for the initial import and `linear` after that. Useful if you want `linear` but don't care to import the long prior history of the repository that you embed.
+
+        * 15a0e85 - (HEAD, master) [foo] set f = 50
+        * 74ad1fc - set f = 49 and b = 13
+        * 2c2c938 - [foo] set f = 48
+        * 2153dbf - set f = 47
+        * 75eaac9 - set f = 46
+        * 0e44e44 - [foo] set f = 45
+        * ff10f73 - [foo] set f = 44
+        * de06e66 - [foo] Import 638fb59
+        * 4991bc4 - set b = 12
+        * a890970 - add b = 11
+
+* `--method=squash,merge` uses `squash` for the initial import and `merge` after that:
+
+        *   cfdca8d - (HEAD, master) [foo] Update to adb4da0
+        |\
+        | * adb4da0 - (foo/master) set f = 50
+        | * ad57dde - set f = 49 and b = 13
+        * | 523bcea - set f = 49 and b = 13
+        * |   98a14c0 - [foo] Update to 14afbe2
+        |\ \
+        | |/
+        | * 14afbe2 - set f = 48
+        | * 8866f7f - set f = 47
+        | * 30c2fd0 - set f = 46
+        * | dc3c34b - set f = 47
+        * | f920010 - set f = 46
+        * |   cfe6080 - [foo] Update to b4c7b07
+        |\ \
+        | |/
+        | * b4c7b07 - set f = 45
+        | * 567bd03 - set f = 44
+        | * f01b80e - set f = 43
+        | * 11bfea6 - add f = 42
+        * 96858c3 - [foo] Import f01b80e
+        * bd56bc4 - set b = 12
+        * 1dbfc58 - add b = 11
+
+Like other subdir options, the chosen method is saved in your git options and used in subsequent invocations.
 
 Please note that you're free to change the importing method down the line. In fact, you are free to merge, split, rebase, amend the imported commits as you like, or even do crazy stuff like `git filter-branch`, as long as your changes don't affect the actual content of `<subdir>`.
 
