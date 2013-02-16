@@ -46,7 +46,7 @@ sh_escape_all() {
 ####################################################################################################
 # GENERIC GIT HELPER FUNCTIONS
 
-fancy_oneline='format:    %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset%n'
+fancy_oneline='format:    %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%ad) %C(bold blue)<%an>%Creset%n'
 squashmsg_format='format:* %h %ad %s <%ae>%n'
 
 # copy_commit <commit> <tree> ["-p<parent1> -p<parent2>..."]
@@ -293,9 +293,9 @@ process_subdir() {(
     read base_tree base_in_subdir base < <(find_base_commit)
     if test -n "$base"; then
         echo "Here's the most recently imported/exported commit in our repo:"
-        git --no-pager log -1 --pretty="$fancy_oneline" "$base"
+        git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base"
         echo "Here's its counterpart in the subdir repo:"
-        git --no-pager log -1 --pretty="$fancy_oneline" "$base_in_subdir"
+        git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base_in_subdir"
     else
         echo "No imported or exported commits found. Perhaps this is a first-time import."
     fi
@@ -308,7 +308,7 @@ process_subdir() {(
     outgoing_commits="$(find_outgoing_commits)"
     if test -n "$outgoing_commits"; then
         echo "Outgoing commits:"
-        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" $outgoing_commits
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $outgoing_commits
     else
         echo "No outgoing commits."
     fi
@@ -318,7 +318,7 @@ process_subdir() {(
     test -n "$incoming_HEAD" && incoming_tree="$(toptree_for_commit $incoming_HEAD)"
     if test -n "$incoming_commits"; then
         echo "Incoming commits:"
-        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" $incoming_commits
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $incoming_commits
     else
         echo "No incoming commits."
     fi
@@ -337,7 +337,7 @@ process_subdir() {(
             echo "    You can use --force to override, but pls be very sure!"
             echo
             echo "    FYI, here's the most recently imported/exported commit:"
-            git --no-pager log -1 --pretty="$fancy_oneline" "$base"
+            git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base"
             exit 1
         fi
     fi
@@ -392,7 +392,7 @@ process_subdir() {(
                 test "$new_commit" = "fail" && die "** Importing failed."
 
                 echo "Imported commits:"
-                git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" $new_commits
+                git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $new_commits
 
                 run "Add the imported commits to the current branch" \
                     git update-ref -m "$import_message" HEAD "$new_commit" "$HEAD"
