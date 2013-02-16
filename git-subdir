@@ -367,7 +367,7 @@ process_subdir() {(
     fi
 
     if test -n "$incoming_commits"; then
-        incoming_HEAD_short="$(git rev-parse --short "$incoming_HEAD")"
+        incoming_HEAD_short="$(git describe --always "$incoming_HEAD")"
         echo "incoming_HEAD_short = '$incoming_HEAD_short'"
         if $initial; then
             import_message="$(expand_config subdir.initialImportMessage '<prefix>Import <commit>')"
