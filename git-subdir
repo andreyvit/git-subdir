@@ -175,10 +175,7 @@ create_incoming_commits_for_linear_method() {
 format_squashed_incoming_commit_message() {
     echo "$import_message"
     echo
-    echo "Contains the following commits:"
-    for commit in $incoming_commits; do
-        git log -1 --pretty="$squashmsg_format" $commit
-    done
+    git --no-pager log --no-walk=unsorted --date=short --pretty="$squashmsg_format" $incoming_commits
 }
 
 # handle_subdir_option <subdir> <option> <value> <default> <force-save?>
@@ -296,9 +293,9 @@ process_subdir() {(
     read base_tree base_in_subdir base < <(find_base_commit)
     if test -n "$base"; then
         echo "Here's the most recently imported/exported commit in our repo:"
-        git log -1 --pretty="$fancy_oneline" "$base"
+        git --no-pager log -1 --pretty="$fancy_oneline" "$base"
         echo "Here's its counterpart in the subdir repo:"
-        git log -1 --pretty="$fancy_oneline" "$base_in_subdir"
+        git --no-pager log -1 --pretty="$fancy_oneline" "$base_in_subdir"
     else
         echo "No imported or exported commits found. Perhaps this is a first-time import."
     fi
@@ -311,9 +308,7 @@ process_subdir() {(
     outgoing_commits="$(find_outgoing_commits)"
     if test -n "$outgoing_commits"; then
         echo "Outgoing commits:"
-        for commit in $outgoing_commits; do
-            git log -1 --pretty="$fancy_oneline" $commit
-        done
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" $outgoing_commits
     else
         echo "No outgoing commits."
     fi
@@ -323,9 +318,7 @@ process_subdir() {(
     test -n "$incoming_HEAD" && incoming_tree="$(toptree_for_commit $incoming_HEAD)"
     if test -n "$incoming_commits"; then
         echo "Incoming commits:"
-        for commit in $incoming_commits; do
-            git log -1 --pretty="$fancy_oneline" $commit
-        done
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" $incoming_commits
     else
         echo "No incoming commits."
     fi
@@ -344,7 +337,7 @@ process_subdir() {(
             echo "    You can use --force to override, but pls be very sure!"
             echo
             echo "    FYI, here's the most recently imported/exported commit:"
-            git log -1 --pretty="$fancy_oneline" "$base"
+            git --no-pager log -1 --pretty="$fancy_oneline" "$base"
             exit 1
         fi
     fi
@@ -356,7 +349,7 @@ process_subdir() {(
             new_commit="$(create_outgoing_commits | tail -1)"
             if ! test "$new_commit" = "$base"; then
                 new_commit_count=$(expr $(git rev-list $base..$new_commit | wc -l))
-                git log --pretty=oneline -$new_commit_count $new_commit
+                git --no-pager log --pretty=oneline -$new_commit_count $new_commit
                 run "Pushing new commits to the server" \
                     git push $remote $new_commit:$branch
                 echo "Export finished."
@@ -399,9 +392,7 @@ process_subdir() {(
                 test "$new_commit" = "fail" && die "** Importing failed."
 
                 echo "Imported commits:"
-                for commit in $new_commits; do
-                    git log -1 --pretty="$fancy_oneline" $commit
-                done
+                git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" $new_commits
 
                 run "Add the imported commits to the current branch" \
                     git update-ref -m "$import_message" HEAD "$new_commit" "$HEAD"
