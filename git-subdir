@@ -254,7 +254,7 @@ process_subdir() {(
 
     remote="$(handle_subdir_option "$subdir" remote "$remote" "$(basename "$subdir")" true)"
     branch="$(handle_subdir_option "$subdir" branch "$branch" master true)"
-    method="$(handle_subdir_option "$subdir" method "$method" squash true)"
+    method="$(handle_subdir_option "$subdir" method "$method" 'squash,linear' true)"
     prefix="$(handle_subdir_option "$subdir" prefix "$prefix" '[<remote>] ' true)"
 
     prefix="$(expand_value "$prefix")"
@@ -445,7 +445,7 @@ prefix=       prefix for imported commit msgs
 
   Expansions for --prefix: <remote>, <branch>, <subdir>.
 
-  Option defaults: -r \$(basename \$subdir) -b master -M squash --prefix '[<remote>] '
+  Option defaults: -r \$(basename \$subdir) -b master -M squash,linear --prefix '[<remote>] '
 
   Available methods for -M: merge, squash, linear. You can also use -Msquash,linear or -Msquash,merge
 

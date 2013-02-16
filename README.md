@@ -125,7 +125,7 @@ Subdirectory options (saved into git config per `<subdir>` automatically):
 
 Available expansions for `--prefix`: `<remote>`, `<branch>`, `<subdir>`.
 
-Subdirectory option defaults: `-r $(basename <subdir>) -b master -M squash --prefix '[<remote>] '`.
+Subdirectory option defaults: `-r $(basename <subdir>) -b master -M squash,linear --prefix '[<remote>] '`.
 
 Other options:
 
