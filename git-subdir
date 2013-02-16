@@ -229,6 +229,24 @@ run_or_skip() {
     fi
 }
 
+expand_value() {
+    value="$1"
+    lf="
+"
+    value="${value//<remote>/$remote}"
+    value="${value//<branch>/$branch}"
+    value="${value//<subdir>/$subdir}"
+    value="${value//<prefix>/$prefix}"
+    value="${value//<lf>/$lf}"
+    value="${value//<lflf>/$lf$lf}"
+    value="${value//<commit>/$incoming_HEAD_short}"
+    echo "$value"
+}
+
+expand_config() {
+    expand_value "$(git config --get "$1" || echo "$2")"
+}
+
 ####################################################################################################
 # OPERATIONS
 
@@ -240,6 +258,9 @@ process_subdir() {(
     remote="$(handle_subdir_option "$subdir" remote "$remote" "$(basename "$subdir")" true)"
     branch="$(handle_subdir_option "$subdir" branch "$branch" master true)"
     method="$(handle_subdir_option "$subdir" method "$method" squash true)"
+    prefix="$(handle_subdir_option "$subdir" prefix "$prefix" '[<remote>] ' true)"
+
+    prefix="$(expand_value "$prefix")"
 
     debug "Processing folder $subdir against remote branch $remote/$branch, method = $method."
 
@@ -283,12 +304,6 @@ process_subdir() {(
     test -z "$base" && initial=true || initial=false
 
     $initial && method=$initial_method
-
-    if $initial; then
-        import_message="Add a copy of $remote/$branch"
-    else
-        import_message="Merge the latest version of $remote/$branch"
-    fi
 
     outgoing_commits="$(find_outgoing_commits)"
     if test -n "$outgoing_commits"; then
@@ -352,6 +367,14 @@ process_subdir() {(
     fi
 
     if test -n "$incoming_commits"; then
+        incoming_HEAD_short="$(git rev-parse --short "$incoming_HEAD")"
+        echo "incoming_HEAD_short = '$incoming_HEAD_short'"
+        if $initial; then
+            import_message="$(expand_config subdir.initialImportMessage '<prefix>Import <commit>')"
+        else
+            import_message="$(expand_config subdir.importMessage '<prefix>Update to <commit>')"
+        fi
+
         if test "$mode" = import -o "$mode" = sync; then
             case $method in
             squash)
@@ -421,10 +444,15 @@ E,export      export changes
 Q,status      display the current status (the default mode), aka 'query' mode
 
   Subdirectory options (saved into git config automatically):
-r,remote=     remote name (defaults to the last component of <subdir>)
-b,branch=     remote branch name (defaults to master)
+r,remote=     remote name
+b,branch=     remote branch name
 url=          remote url (if you want git-subdir to set up git-remote automatically)
-M,method=     importing method, defaults to squash
+M,method=     importing method
+prefix=       prefix for imported commit msgs
+
+  Expansions for --prefix: <remote>, <branch>, <subdir>.
+
+  Option defaults: -r \$(basename \$subdir) -b master -M squash --prefix '[<remote>] '
 
   Available methods for -M: merge, squash, linear. You can also use -Msquash,linear or -Msquash,merge
 
@@ -433,6 +461,8 @@ F,no-fetch    don't run 'git fetch'
 fetch         override --no-fetch
 n,dry-run     don't execute anything, merely print the commands that would be executed
 force         force importing even in the presence of incoming changes
+
+  Configuration options (git config): subdir.importMessage, subdir.initialImportMessage.
 
   General options:
 h,help        show the help
@@ -459,6 +489,7 @@ debug=
 remote=
 branch=
 method=
+prefix=
 url=
 fetch=true
 dry_run=false
@@ -475,6 +506,7 @@ while [ $# -gt 0 ]; do
         -r) remote="$1"; shift;;
         -b) branch="$1"; shift;;
         --url) url="$1"; shift;;
+        --prefix) prefix="$1"; shift;;
         --fetch) fetch=true;;
         -F) fetch=false;;
         -n) dry_run=true;;

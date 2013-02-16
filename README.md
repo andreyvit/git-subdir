@@ -112,12 +112,17 @@ This command runs one of the following four operations, defaulting to the `--sta
     -E, --export            export changes
     -Q, --status            display the current status (the default mode), aka 'query' mode
 
-Subdirectory options (saved into git config automatically):
+Subdirectory options (saved into git config per `<subdir>` automatically):
 
-    -r, --remote <remote>   remote name (defaults to the last component of <subdir>)
-    -b, --branch <branch>   remote branch name (defaults to master)
+    -r, --remote <remote>   remote name
+    -b, --branch <branch>   remote branch name
     --url <url>             remote url (if you want git-subdir to set up git-remote automatically)
-    -M, --method <method>   importing method, defaults to squash (discussed below)
+    -M, --method <method>   importing method (discussed below)
+    --prefix <prefix>       prefix for imported commit msgs
+
+Expansions for `--prefix`: `<remote>`, `<branch>`, `<subdir>`.
+
+Subdirectory option defaults: `-r $(basename <subdir>) -b master -M squash --prefix '[<remote>] '`.
 
 Other options:
 
@@ -161,6 +166,14 @@ To share settings with your collaborators, create a simple shell script, perhaps
 Because all of these values are saved into your `git config`, you only need to run `git subdir <subdir>` to sync in the future.
 
 (To have even less files to maintain, you can put these commands in your README instead of a shell script.)
+
+
+## Configuration
+
+* `git config subdir.importMessage '<prefix>Update <subdir>/ to the latest <remote>/<branch>'`
+
+* `git config subdir.initialImportMessage '<prefix>Import <remote>/<branch> into <subdir>/'`
+
 
 
 ## Warning: If there are both incoming and outgoing changes...
