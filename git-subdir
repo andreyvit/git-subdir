@@ -411,7 +411,7 @@ process_subdir() {(
                     git read-tree --prefix=$subdir/ -u $remote/$branch
 
                 run "Commit the changes" \
-                    git commit -m "$import_message"
+                    git commit --no-status -m "$import_message"
                 ;;
             esac
         else
