@@ -409,8 +409,9 @@ process_subdir() {(
                 run "Copy the new version into the subdir" \
                     git read-tree --prefix=$subdir/ -u $remote/$branch
 
+                # -q foregoes the summary message which takes a long time to generate for large commits
                 run "Commit the changes" \
-                    git commit --no-status -m "$import_message"
+                    git commit -q -m "$import_message"
                 ;;
             esac
         else
