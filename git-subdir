@@ -46,8 +46,8 @@ sh_escape_all() {
 ####################################################################################################
 # GENERIC GIT HELPER FUNCTIONS
 
-fancy_oneline='format:    %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%ad) %C(bold blue)<%an>%Creset%n'
-squashmsg_format='format:* %h %ad %s <%ae>%n'
+fancy_oneline='tformat:    %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%ad) %C(bold blue)<%an>%Creset'
+squashmsg_format='tformat:* %h %ad %s <%ae>'
 
 # copy_commit <commit> <tree> ["-p<parent1> -p<parent2>..."]
 copy_commit() {
