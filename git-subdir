@@ -68,7 +68,7 @@ copy_commit() {
             GIT_COMMITTER_NAME \
             GIT_COMMITTER_EMAIL \
             GIT_COMMITTER_DATE
-        cat |
+        (echo -n "$commit_msg_prefix"; cat) |
         git commit-tree "$2" $3  # reads the rest of stdin
     ) || die "Can't copy commit $1"
 }
@@ -137,17 +137,39 @@ create_outgoing_commits() {
     last_commit="$incoming_HEAD"
     echo "$outgoing_commits" |
     while read commit; do
-        git log -1 --pretty=oneline $commit
         tree="$(subtree_for_commit $commit "$subdir")"
         if test -n "$tree"; then
             debug "    subtree is: $tree"
-            last_commit="$(copy_commit "$commit" "$tree" "-p $last_commit")"
+            last_commit="$(commit_msg_prefix="" copy_commit "$commit" "$tree" "-p $last_commit")"
             echo "$last_commit"
             debug "    new commit is: $last_commit"
         else
             debug "    no subtree found"
         fi
     done
+}
+
+# subdir=<subdir> base=<base-commit> outgoing_commits=<commits> create_outgoing_commits
+create_incoming_commits_for_linear_method() {
+    export GIT_INDEX_FILE="$TEMP_INDEX_FILE"  # use a temporary index here to avoid
+    git read-tree "$HEAD"
+
+    commit_msg_prefix="[$remote] "  # used by copy_commit
+
+    last_commit="$HEAD"
+    echo "$incoming_commits" |
+        while read commit; do
+            debug "git ls-files -- \"$subdir/\" | xargs git update-index --remove"
+            old_files="$(git ls-files -- "$subdir/")" || { echo "fail"; break; }
+            echo "$old_files" | xargs git update-index --force-remove || { echo "fail"; break; }
+            debug "git read-tree --prefix=\"$subdir/\" $commit"
+            git read-tree --prefix="$subdir/" $commit || { echo "fail"; break; }
+            tree="$(git write-tree)"
+            debug "    tree is: $tree"
+            last_commit="$(copy_commit "$commit" "$tree" "-p $last_commit")"
+            echo "$last_commit"
+            debug "    new commit is: $last_commit"
+        done
 }
 
 format_squashed_incoming_commit_message() {
@@ -222,8 +244,9 @@ process_subdir() {(
     debug "Processing folder $subdir against remote branch $remote/$branch, method = $method."
 
     case "$method" in
-        merge | squash) initial_method=$method;;
-        squash-initial-then-merge)  method=merge; initial_method=squash;;
+        merge | squash | linear) initial_method=$method;;
+        squash,merge)  method=merge; initial_method=squash;;
+        squash,linear) method=linear; initial_method=squash;;
         *) die "** Unknown --method '$method'. Run with -h for usage.";;
     esac
 
@@ -342,6 +365,24 @@ process_subdir() {(
                     git commit -m "$(format_squashed_incoming_commit_message)"
                 ;;
 
+            linear)
+                new_commits="$(create_incoming_commits_for_linear_method)"
+                new_commits_count=$(expr $(echo "$new_commits" | wc -l))
+                new_commit="$(echo "$new_commits" | tail -1)"
+
+                test "$new_commit" = "fail" && die "** Importing failed."
+
+                echo "Imported commits:"
+                for commit in $new_commits; do
+                    git log -1 --pretty="$fancy_oneline" $commit
+                done
+
+                run "Add the imported commits to the current branch" \
+                    git update-ref -m "$import_message" HEAD "$new_commit" "$HEAD"
+                run "Update the working directory" \
+                    git read-tree --reset -u HEAD
+                ;;
+
             merge)
                 run "Merge with the remote branch" \
                     git merge -s ours --no-commit $remote/$branch
@@ -385,7 +426,7 @@ b,branch=     remote branch name (defaults to master)
 url=          remote url (if you want git-subdir to set up git-remote automatically)
 M,method=     importing method, defaults to squash
 
-  Available methods for -M: merge, squash, squash-initial-then-merge.
+  Available methods for -M: merge, squash, linear. You can also use -Msquash,linear or -Msquash,merge
 
   Other options:
 F,no-fetch    don't run 'git fetch'
@@ -406,6 +447,8 @@ eval "$(echo "$OPTS_SPEC" | git rev-parse --parseopt -- "$@" || echo exit $?)"
 PATH=$PATH:$(git --exec-path)
 . git-sh-setup
 require_work_tree
+
+TEMP_INDEX_FILE="$GIT_DIR/index.gitsubdir.tmp"
 
 
 ####################################################################################################

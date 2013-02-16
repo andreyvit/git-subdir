@@ -137,8 +137,10 @@ If you specify `--url <url>`, a Git remote named `<remote>` will be created auto
 When importing commits from the remote repository like _mixins_, git-subdir can use one of the following approaches:
 
 * `--method=squash` will combine all the incoming commits into a single commit in your repository; this is useful if you want your history to stay clean, and don't care about individual incoming commits too much
+* `--method=linear` will add all imported commits into your repository linearly (as if you committed the changes yourself), prefixing each commit message with remote name
 * `--method=merge` will save the entire history of the remote repository into your one, and will add a merge commit on every import, joining your repository history with the history of the imported repository (like git-subtree does by default); this is useful if you want to see the individual commits of the imported repository within your master repository
-* `--method=squash-initial-then-merge` will use `squash` for the initial import, and `merge` after that; this is useful if you care about individual commits in the future, but don't want to import the history of prior changes
+* `--method=squash,linear` will use `squash` for the initial import and `linear` after that (useful if you care about individual commits in the future, but don't want to import the history of prior changes)
+* `--method=squash,merge` will use `squash` for the initial import and `merge` after that (same as the prior one, but for those who prefer non-linear history)
 
 Like other subdir options, the chosen method is saved in your git options and will be used until you specify another one.
 

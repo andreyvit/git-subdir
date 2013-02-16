@@ -1,2 +1,2 @@
 #!/bin/bash
-./test.sh -Mmerge
+./test.sh -Mmerge "$@"

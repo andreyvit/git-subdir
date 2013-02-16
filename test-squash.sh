@@ -1,2 +1,2 @@
 #!/bin/bash
-./test.sh -Msquash
+./test.sh -Msquash "$@"
