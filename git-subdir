@@ -280,12 +280,15 @@ process_subdir() {(
             run "Update remote '$remote' to point to a new URL" \
                 git remote set-url "$remote" "$url"
         fi
+        if test -z "$(git config --get "remote.$remote.tagopt")"; then
+            git config "remote.$remote.tagopt" --no-tags
+        fi
     elif test -z "$saved_url"; then
         die "** Remote '$remote' does not exist. Please provide --url <url> or set up the remote yourself."
     fi
 
     dry_run=false run_or_skip "$fetch" "Fetching updates from the server" "Skipping 'git fetch' because of --no-fetch." \
-        git fetch "$remote"
+        git fetch --no-tags "$remote"
 
     HEAD="$(git rev-parse HEAD)"
 
