@@ -1,46 +1,49 @@
 # git-subdir
 
-Provides `git subdir` command that allows you to embed a subrepository within another Git repository — kind of like `git submodule` or `git subtree`.
+Provides `git subdir` command that allows you to embed a subrepository within another Git repository — kind of like `git submodule` and `git subtree`.
 
-The problem we are trying to solve:
+Quick intro:
 
-* We want to have a copy of another repository's _data_ inside a subfolder of our repository.
-* We want to replicate changes between the copies.
-* We want to preserve the history in the process.
-* We _don't_ really care for the commits to match _exactly_.
+    # embedding a repository
+    cd ~/master-repo
+    git subdir myembedded/ --url git@github.com/myname/embedded-repo.git --import
+
+    # exporting commits to the embedded repo
+    git subdir myembedded/ --status   # preview the outgoing commits
+    git subdir myembedded/ --export
+
+    # importing commits from the embedded repo
+    git subdir myembedded/ --status   # preview the incoming commits
+    git subdir myembedded/ --import
 
 Compared to other approaches, git-subdir:
 
-* Embeds the actual content, not just a reference (unlike git-submodule).
-* Does not store any metadata, and there's no requirement for the imported commits to stay intact (unlike git-subtree). Rebase, amend and filter-branch as much as you wish.
-* In fact, there is no persistent state, aside from some command-line arguments stored in `git config` to be used as defaults later.
-* Will happily pick up the results of `git-subtree`, subtree merge or even the plain old `cp`.
-* Both imports and exports commits, providing instant two-way syncing.
+* Embeds the actual content, not just a reference (like git-subtree and unlike git-submodule).
+* Does not store any metadata, and there's no requirement for the imported commits to stay intact. Rebase, amend and filter-branch to your heart's content.
+* Does not try to map commits across repositories. It focuses on the commits that need to be imported or exported at the moment, and does not care about historical commits.
+* In fact, there is no persistent state at all (aside from some command-line options automatically saved as defaults for later).
+* Will happily pick up the results of git-subtree, subtree merge or any other way of syncing folders. In fact, even if you have copied the subfolder via drag'n'drop or `cp -r`, you can still use git-subdir to sync changes.
+* Syncs both ways: you can commit into the embedded repository and then import the commits into the master one, or you can commit in the master repository and then export the commits into the embedded one. In fact, you can alternate between the two approaches.
+
+To put it simply, the idea of git-subdir is that, conceptually, we want an approach similar to cherry-picking rather than the strict semantics of normal merge/rebase.
 
 Caveats:
 
-* Requires manual intervention to merge changes when there are both incoming and outgoing ones. This isn't a conceptual problem, just something that hasn't been implemented yet. See a dedicated warning section below.
+* Requires manual intervention to merge changes when there are both incoming and outgoing commits. This isn't a conceptual problem, just something that hasn't been implemented yet. See a dedicated warning section below.
+* This is a very new piece of software, so bugs are expected in abundance.
 
 
-## Implementation details
+## Installation
 
-git-subdir does not try to map commits across repositories. Instead, it only cares about the changes that need to be imported or exported — we'll call those _incoming_ and _outgoing_ changes respectively.
+    curl -L https://github.com/andreyvit/git-subdir/raw/master/git-subdir | sudo tee /usr/bin/git-subdir >/dev/null
 
-To determine the incoming and outgoing changes, git-subdir finds the most recent commit in the embedded repositorythat matches the _content_ of the specified `<subdir>` of the master repository _at some point in history_.
+or:
 
-(Let that sink in.)
+    git clone https://github.com/andreyvit/git-subdir.git
+    cd git-subdir
+    make install
 
-We'll call that a _base_ commit. After we determine the base commit, things get very simple:
-
-Any commits in the embedded repository made after the base commit need to be imported, and are thus called _incoming commits_.
-
-Any commits that affect `<subdir>` in the master repository and made after the base commit, need to be _exported_, and are thus called _outgoing commits_.
-
-If we have both incoming and outgoing commits, we have to merge them as described below. This isn't handled very well right now (see a section below).
-
-If we only have incoming commits, we can import them. You have a choice of several methods described below.
-
-If we only have outgoing commits, we can export them; internally, this looks very similar to cherry-picking.
+For development use `make link` instead. You can also run the tests using the provided `test-*.sh` scripts. (Note: the tests don't have any assertions; it's up to you to look at the output logs and see if everything worked well. It is very easy to do, though, and it's usually enough to only inspect the final git log.)
 
 
 ## Example use case
@@ -86,7 +89,7 @@ A more likely scenario is that you change `lib/mixins` within _mysite_ first...
     $ git subdir lib/mixins       # make sure everything looks fine
     $ git subdir lib/mixins -E
 
-If some other sites (_yoursite_, _theirsite_) also have copies of _mixins_ (and have already been set up with git-subdir), you can now import the changes you have just exported into all those projects:
+If some other sites (yoursite, theirsite) also have copies of _mixins_ (and have already been set up with git-subdir), you can now import the changes you have just exported into all those projects:
 
     $ cd ~/yoursite
     $ git subdir lib/mixins       # make sure everything looks fine
@@ -95,7 +98,7 @@ If some other sites (_yoursite_, _theirsite_) also have copies of _mixins_ (and 
     $ git subdir lib/mixins       # make sure everything looks fine
     $ git subdir lib/mixins -I
 
-With git-subdir, you're free to make changes wherever you like, knowing that you can sync them later.
+With git-subdir, you're free to make changes wherever you like knowing that you can sync them later.
 
 
 ## Synopsis
@@ -103,7 +106,7 @@ With git-subdir, you're free to make changes wherever you like, knowing that you
 Usage:
 
     git subdir [-Q | -S | -E | -I]
-    git subdir [-Q | -S | -E | -I] <subdir> [--remote <remote>] [--branch branch] [--url <url>]
+    git subdir [-Q | -S | -E | -I] <subdir> [-r <remote>] [-b branch] [--url <url>] [...]
 
 This command runs one of the following four operations, defaulting to the `--status` one:
 
@@ -120,7 +123,7 @@ Subdirectory options (saved into git config per `<subdir>` automatically):
     -M, --method <method>   importing method (discussed below)
     --prefix <prefix>       prefix for imported commit msgs
 
-Expansions for `--prefix`: `<remote>`, `<branch>`, `<subdir>`.
+Available expansions for `--prefix`: `<remote>`, `<branch>`, `<subdir>`.
 
 Subdirectory option defaults: `-r $(basename <subdir>) -b master -M squash --prefix '[<remote>] '`.
 
@@ -224,6 +227,25 @@ Third, the way you resolve this is by running `git subdir --export --branch <tem
     $ git subdir lib/mixins -I -b master
 
 I might automate this process in the future, perhaps as part of the import command.
+
+
+## How git-subdir determines to commits to sync
+
+First, git-subdir finds the most recent commit in the embedded repository that matches the _content_ of the specified `<subdir>` of the master repository _at some point in history_. We'll call that a _base_ commit.
+
+(Let that sink in.)
+
+After we have the base commit, things get very simple:
+
+* Any commits in the embedded repository made after the base commit need to be imported, and are thus called _incoming commits_.
+
+* Any commits that affect `<subdir>` in the master repository and made after the base commit, need to be _exported_, and are thus called _outgoing commits_.
+
+If we have both incoming and outgoing commits, we have to merge them as described below. This isn't handled very well right now (see a warning section above).
+
+If we only have incoming commits, we can import them. You have a choice of several methods to deal with the imported history.
+
+If we only have outgoing commits, we can export them; internally, this looks very similar to cherry-picking.
 
 
 ## git-subdir vs git-subtree vs subtree merge
