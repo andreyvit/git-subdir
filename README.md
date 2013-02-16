@@ -170,10 +170,20 @@ Because all of these values are saved into your `git config`, you only need to r
 
 ## Configuration
 
-* `git config subdir.importMessage '<prefix>Update <subdir>/ to the latest <remote>/<branch>'`
+* `git config --global subdir.importMessage '<prefix>Update to <commit>'`
 
-* `git config subdir.initialImportMessage '<prefix>Import <remote>/<branch> into <subdir>/'`
+    A message to use for squash and merge commits when using the respective modes, and also for reflogs.
 
+    (This message is used when updating an existing copy. For the initial import, _subdir.initialImportMessage_ is used instead.)
+
+    Available expansions:
+
+    * `<remote>`, `<branch>`, `<subdir>`, `<prefix>` — values set by the corresponding options;
+    * `<commit>` — an abbreviated id of the latest imported commit.
+
+* `git config --global subdir.initialImportMessage '<prefix>Import <commit>'`
+
+    Similar to _subdir.importMessage_, but used for the initial import.
 
 
 ## Warning: If there are both incoming and outgoing changes...
