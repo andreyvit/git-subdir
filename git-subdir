@@ -6,9 +6,7 @@ shopt -s extglob
 # GENERIC FUNCTIONS
 
 debug() {
-    if test -n "$debug"; then
-        echo "$@" >&2
-    fi
+    $verbose3 && echo "    $@" >&2
 }
 
 assert() {
@@ -46,7 +44,7 @@ sh_escape_all() {
 ####################################################################################################
 # GENERIC GIT HELPER FUNCTIONS
 
-fancy_oneline='tformat:    %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%ad) %C(bold blue)<%an>%Creset'
+fancy_oneline='tformat:        %Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%ad) %C(bold blue)<%an>%Creset'
 squashmsg_format='tformat:* %h %ad %s <%ae>'
 
 # copy_commit <commit> <tree> ["-p<parent1> -p<parent2>..."]
@@ -98,9 +96,9 @@ subtree_for_commit() {
 # GITDIR-SPECIFIC HELPERS
 
 _find_base_commit_helper() {
-    debug "Loading up to 20 master commits starting with $top_master_commit..."
+    debug "Loading up to $master_load_count master commits starting with $top_master_commit..."
     commit=""
-    for commit in $(git rev-list --topo-order -20 $top_master_commit); do
+    for commit in $(git rev-list --topo-order -$master_load_count $top_master_commit); do
         tree="$(subtree_for_commit "$commit" "$subdir")"
         # debug "master commit $commit, tree $tree"
         if test -n "$tree"; then
@@ -109,6 +107,7 @@ _find_base_commit_helper() {
         fi
     done
     top_master_commit="$commit^"
+    master_load_count=20
 
     while read dummy commit tree; do
         if test "$dummy" = "commit-tree"; then
@@ -136,6 +135,7 @@ find_base_commit() {
     fi
 
     top_master_commit=HEAD
+    master_load_count=1
     while git rev-parse --verify -q "$top_master_commit" >/dev/null; do
         _find_base_commit_helper
     done
@@ -221,8 +221,8 @@ handle_subdir_option() {
 run() {
     comment="$1"; shift
     dry=""; $dry_run && dry="(dry) "
-    echo "$comment:" >&2
-    echo "    ${dry}$(sh_escape_all "$@")" >&2
+    $verbose && echo "    $comment:" >&2
+    $verbose && echo "        ${dry}$(sh_escape_all "$@")" >&2
     if ! $dry_run; then
         "$@" || die "** Command failed. Stop."
     fi
@@ -231,8 +231,8 @@ run() {
 run_with_result() {
     comment="$1"; shift
     dry=""; $dry_run && dry="(dry) "
-    echo "$comment:" >&2
-    echo "    ${dry}$(sh_escape_all "$@")" >&2
+    $verbose && echo "    $comment:" >&2
+    $verbose && echo "        ${dry}$(sh_escape_all "$@")" >&2
     if ! $dry_run; then
         result="$("$@")" || die "** Command failed. Stop."
     else
@@ -245,7 +245,7 @@ run_or_skip() {
         comment="$2"; shift; shift; shift
         run "$comment" "$@"
     else
-        echo "$3" >&2
+        $verbose && echo "    $3" >&2
     fi
 }
 
@@ -279,19 +279,37 @@ find_known_subdirs() {
         done
 }
 
+process_subdir_print_status() {
+    case "$status" in
+        insync)     status_msg="In sync.";;
+        incoming)   status_msg="Incoming changes.";;
+        outgoing)   status_msg="Outging changes.";;
+        conflict)   status_msg="Both incoming and outgoing changes.";;
+    esac
+
+    $verbose && echo "    $status_msg" >&2
+    $verbose || echo "$subdir: $status_msg" >&2
+    test "$status" = 'insync' || process_subdir_results[${#process_subdir_results[@]}]="$subdir: $status_msg"
+}
+
 # subdir=<subdir> [url=<url>] [remote=<remote>] [branch=<branch>] process_subdir
-process_subdir() {(
+process_subdir() {
     # remove trailing slash, it will interfer with --prefix option to git read-tree
     subdir="${subdir%/}"
 
-    remote="$(handle_subdir_option "$subdir" remote "$remote" "$(basename "$subdir")" true)"
-    branch="$(handle_subdir_option "$subdir" branch "$branch" master true)"
-    method="$(handle_subdir_option "$subdir" method "$method" 'squash,linear' true)"
-    prefix="$(handle_subdir_option "$subdir" prefix "$prefix" '[<remote>] ' true)"
+    local remote="$(handle_subdir_option "$subdir" remote "$remote" "$(basename "$subdir")" true)"
+    local branch="$(handle_subdir_option "$subdir" branch "$branch" master true)"
+    local method="$(handle_subdir_option "$subdir" method "$method" 'squash,linear' true)"
+    local prefix="$(handle_subdir_option "$subdir" prefix "$prefix" '[<remote>] ' true)"
 
     prefix="$(expand_value "$prefix")"
 
-    debug "Processing folder $subdir against remote branch $remote/$branch, method = $method."
+    import=false
+    export=false
+    test "$mode" = import -o "$mode" = sync && import=true
+    test "$mode" = export -o "$mode" = sync && export=true
+
+    $verbose && echo "$subdir" >&2
 
     case "$method" in
         merge | squash | linear) initial_method=$method;;
@@ -324,12 +342,12 @@ process_subdir() {(
     # base="$(git merge-base HEAD $remote/$branch)"
     read base_tree base_in_subdir base < <(find_base_commit)
     if test -n "$base"; then
-        echo "Here's the most recently imported/exported commit in our repo:"
-        git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base"
-        echo "Here's its counterpart in the subdir repo:"
-        git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base_in_subdir"
+        $verbose && echo "    Here's the most recently imported/exported commit in our repo:" >&2
+        $verbose && git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base"
+        $verbose && echo "    Here's its counterpart in the subdir repo:" >&2
+        $verbose && git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base_in_subdir"
     else
-        echo "No imported or exported commits found. Perhaps this is a first-time import."
+        $verbose && echo "    No imported or exported commits found. Perhaps this is a first-time import." >&2
     fi
 
     # if there's no base commit, this is an initial import
@@ -338,59 +356,66 @@ process_subdir() {(
     $initial && method=$initial_method
 
     outgoing_commits="$(find_outgoing_commits)"
-    if test -n "$outgoing_commits"; then
-        echo "Outgoing commits:"
-        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $outgoing_commits
-    else
-        echo "No outgoing commits."
-    fi
 
     incoming_commits="$(find_incoming_commits)"
     incoming_HEAD="$(git rev-parse $remote/$branch)"
     test -n "$incoming_HEAD" && incoming_tree="$(toptree_for_commit $incoming_HEAD)"
-    if test -n "$incoming_commits"; then
-        echo "Incoming commits:"
-        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $incoming_commits
+
+    if test -z "$incoming_commits" -a -z "$outgoing_commits"; then
+        status=insync
+        process_subdir_print_status
+    elif test -n "$outgoing_commits" -a -z "$incoming_commits"; then
+        status=outgoing
+        process_subdir_print_status
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $outgoing_commits >&2
+    elif test -z "$outgoing_commits" -a -n "$incoming_commits"; then
+        status=incoming
+        process_subdir_print_status
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $incoming_commits >&2
     else
-        echo "No incoming commits."
+        status=conflict
+        process_subdir_print_status
+
+        echo "    Outgoing commits:" >&2
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $outgoing_commits >&2
+
+        echo "    Incoming commits:" >&2
+        git --no-pager log --no-walk=unsorted --pretty="$fancy_oneline" --date=short $incoming_commits >&2
     fi
 
     if test -n "$incoming_commits" -a -n "$outgoing_commits"; then
         if $force; then
-            echo "    There are both incoming and outgoing commits."
-            echo "    Proceeding because of --force."
+            echo "        There are both incoming and outgoing commits."
+            echo "        Proceeding because of --force."
         else
-            echo "Houston, we have a problem!"
+            echo "    Houston, we have a problem!"
             echo
-            echo "    There are both incoming and outgoing commits."
-            echo "    Please read the docs about resolving this case."
-            echo "    Refusing to do anything to avoid screwing up."
+            echo "        There are both incoming and outgoing commits."
+            echo "        Please read the docs about resolving this case."
+            echo "        Refusing to do anything to avoid screwing up."
             echo
-            echo "    You can use --force to override, but pls be very sure!"
+            echo "        You can use --force to override, but pls be very sure!"
             echo
-            echo "    FYI, here's the most recently imported/exported commit:"
+            echo "        FYI, here's the most recently imported/exported commit:"
             git --no-pager log -1 --pretty="$fancy_oneline" --date=short "$base"
             exit 1
         fi
     fi
 
     if test -n "$outgoing_commits"; then
-        if test "$mode" = export -o "$mode" = sync; then
+        if $export; then
             echo
-            echo "Exporting commits:"
+            echo "    Exporting commits:" >&2
             new_commit="$(create_outgoing_commits | tail -1)"
             if ! test "$new_commit" = "$base"; then
                 new_commit_count=$(expr $(git rev-list $base..$new_commit | wc -l))
                 git --no-pager log --pretty=oneline -$new_commit_count $new_commit
                 run "Pushing new commits to the server" \
                     git push $remote $new_commit:$branch
-                echo "Export finished."
+                echo "    Export finished." >&2
             else
-                echo "No new commits found."
+                echo "    No new commits found." >&2
             fi
-        else
-            echo
-            echo "Skipping export because it was not requested; use -S or -E to run export."
         fi
     fi
 
@@ -402,7 +427,7 @@ process_subdir() {(
             import_message="$(expand_config subdir.importMessage '<prefix>Update to <commit>')"
         fi
 
-        if test "$mode" = import -o "$mode" = sync; then
+        if $import; then
             case $method in
             squash)
                 run "Delete the previous version (so that it does not interfere with git read-tree)" \
@@ -451,7 +476,7 @@ process_subdir() {(
             echo "Skipping import because it was not requested; use -S or -I to run import."
         fi
     fi
-)}
+}
 
 
 ####################################################################################################
@@ -492,7 +517,7 @@ force         force importing even in the presence of incoming changes
 
   General options:
 h,help        show the help
-d,debug       show debug messages
+v,verbose     increase verbosity level (max is -vvv so far)
 "
 eval "$(echo "$OPTS_SPEC" | git rev-parse --parseopt -- "$@" || echo exit $?)"
 
@@ -511,7 +536,6 @@ TEMP_INDEX_FILE="$GIT_DIR/index.gitsubdir.tmp"
 # PROCESS COMMAND LINE OPTIONS
 
 quiet=
-debug=
 remote=
 branch=
 method=
@@ -521,6 +545,7 @@ fetch=true
 dry_run=false
 mode=status
 force=false
+verbosity=0
 
 echo "args: $*"
 
@@ -528,7 +553,7 @@ while [ $# -gt 0 ]; do
     opt="$1"; shift
     case "$opt" in
         -q) quiet=true;;
-        -d) debug=true;;
+        -v) verbosity=$(expr $verbosity + 1);;
         -r) remote="$1"; shift;;
         -b) branch="$1"; shift;;
         --url) url="$1"; shift;;
@@ -548,6 +573,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+verbose=false
+verbose2=false
+verbose3=false
+test $verbosity -ge 1 && verbose=true
+test $verbosity -ge 2 && verbose2=true
+test $verbosity -ge 3 && verbose3=true
+
 if $force && ! test "$mode" = "import"; then
     die "--force can only be used in --import/-I mode."
 fi
@@ -556,6 +588,7 @@ if test $# -gt 0; then
     subdir="$1"
     test -n "$subdir" || die "You must provide a non-empty <subdir>."
 
+    process_subdir_results=()
     process_subdir
 else
     subdirs="$(find_known_subdirs)"
@@ -574,12 +607,20 @@ else
         echo >&2
         echo "— see 'git subdir -h' for the full syntax.)" >&2
     else
+        process_subdir_results=()
         while read subdir; do
-            echo
-            echo "-----------------------------------------------------------------------------"
-            echo "$subdir"
-            echo
             process_subdir
         done < <(echo "$subdirs")
+
+        if test "${#process_subdir_results[@]}" -gt 0; then
+            echo >&2
+            echo "Summary of changes:" >&2
+            for result in "${process_subdir_results[@]}"; do
+                echo "    $result" >&2
+            done
+        else
+            echo >&2
+            echo "Everything is in sync." >&2
+        fi
     fi
 fi
