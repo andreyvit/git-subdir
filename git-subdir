@@ -407,9 +407,9 @@ process_subdir() {
             echo
             echo "    Exporting commits:" >&2
             new_commit="$(create_outgoing_commits | tail -1)"
-            if ! test "$new_commit" = "$base"; then
-                new_commit_count=$(expr $(git rev-list $base..$new_commit | wc -l))
-                git --no-pager log --pretty=oneline -$new_commit_count $new_commit
+            if ! test "$new_commit" = "$base_in_subdir"; then
+                new_commit_count=$(expr $(git rev-list $base_in_subdir..$new_commit | wc -l))
+                git --no-pager log --pretty="$fancy_oneline" -$new_commit_count $new_commit
                 run "Pushing new commits to the server" \
                     git push $remote $new_commit:$branch
                 echo "    Export finished." >&2
