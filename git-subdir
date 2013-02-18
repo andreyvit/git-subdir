@@ -279,17 +279,22 @@ find_known_subdirs() {
         done
 }
 
-process_subdir_print_status() {
-    case "$status" in
-        insync)     status_msg="In sync.";;
-        incoming)   status_msg="Incoming changes.";;
-        outgoing)   status_msg="Outging changes.";;
-        conflict)   status_msg="Both incoming and outgoing changes.";;
+get_status_message() {
+    case "$1" in
+        insync)     echo "In sync.";;
+        incoming)   echo "Incoming changes.";;
+        outgoing)   echo "Outgoing changes.";;
+        conflict)   echo "Both incoming and outgoing changes.";;
+        imported)   echo "Imported.";;
+        exported)   echo "Exported.";;
     esac
+}
+
+process_subdir_print_status() {
+    status_msg="$(get_status_message "$status")"
 
     $verbose && echo "    $status_msg" >&2
     $verbose || echo "$subdir: $status_msg" >&2
-    test "$status" = 'insync' || process_subdir_results[${#process_subdir_results[@]}]="$subdir: $status_msg"
 }
 
 # subdir=<subdir> [url=<url>] [remote=<remote>] [branch=<branch>] process_subdir
@@ -413,6 +418,7 @@ process_subdir() {
                 run "Pushing new commits to the server" \
                     git push $remote $new_commit:$branch
                 echo "    Export finished." >&2
+                status=exported
             else
                 echo "    No new commits found." >&2
             fi
@@ -471,11 +477,14 @@ process_subdir() {
                     git commit -q -m "$import_message"
                 ;;
             esac
+            status=imported
         else
             echo
             echo "Skipping import because it was not requested; use -S or -I to run import."
         fi
     fi
+
+    test "$status" = 'insync' || process_subdir_results[${#process_subdir_results[@]}]="$subdir: $(get_status_message "$status")"
 }
 
 
