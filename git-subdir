@@ -97,24 +97,47 @@ subtree_for_commit() {
 ####################################################################################################
 # GITDIR-SPECIFIC HELPERS
 
-# subdir=<subdir> remote=<remote> branch=<branch> find_base_commit
-find_base_commit() {
-    for commit in $(git rev-list --topo-order --reverse HEAD); do
+_find_base_commit_helper() {
+    debug "Loading up to 20 master commits starting with $top_master_commit..."
+    commit=""
+    for commit in $(git rev-list --topo-order -20 $top_master_commit); do
         tree="$(subtree_for_commit "$commit" "$subdir")"
         # debug "master commit $commit, tree $tree"
         if test -n "$tree"; then
-            eval "tree_$tree=$commit"
+            master_commit="$(eval echo "\${tree_$tree}")"
+            test -z "$master_commit" && eval "tree_$tree=$commit"
         fi
     done
+    top_master_commit="$commit^"
 
-    for commit in $(git rev-list --topo-order $remote/$branch); do
-        tree="$(toptree_for_commit "$commit" "$subdir")"
-        master_commit="$(eval echo "\${tree_$tree}")"
-        # debug "subdir commit $commit, tree $tree, master_commit $master_commit"
-        if test -n "$master_commit"; then
-            echo "$tree $commit $master_commit"
-            exit
+    while read dummy commit tree; do
+        if test "$dummy" = "commit-tree"; then
+            # tree="$(toptree_for_commit "$commit" "$subdir")"
+            master_commit="$(eval echo "\${tree_$tree}")"
+            # debug "subdir commit $commit, tree $tree, master_commit $master_commit"
+            if test -n "$master_commit"; then
+                echo "$tree $commit $master_commit"
+                exit
+            fi
         fi
+    done < <(git rev-list --topo-order --format='commit-tree %H %T' $remote/$branch)
+}
+
+# subdir=<subdir> remote=<remote> branch=<branch> find_base_commit
+find_base_commit() {
+    if test -z "$(subtree_for_commit HEAD "$subdir")"; then\
+        debug "subdir does not exist"
+        exit  # this subdirectory does not even exist yet
+    fi
+
+    if test -z "$(git rev-parse $remote/$branch)"; then
+        debug "embedded repo empty"
+        exit  # embedded repo is empty
+    fi
+
+    top_master_commit=HEAD
+    while git rev-parse --verify -q "$top_master_commit" >/dev/null; do
+        _find_base_commit_helper
     done
 }
 
@@ -246,6 +269,15 @@ expand_config() {
 
 ####################################################################################################
 # OPERATIONS
+
+find_known_subdirs() {
+    git config --get-regexp 'subdir\..*\.remote' |
+        while read key value; do
+            key="${key#subdir.}"
+            key="${key%.remote}"
+            echo "$key"
+        done
+}
 
 # subdir=<subdir> [url=<url>] [remote=<remote>] [branch=<branch>] process_subdir
 process_subdir() {(
@@ -524,7 +556,30 @@ if test $# -gt 0; then
     subdir="$1"
     test -n "$subdir" || die "You must provide a non-empty <subdir>."
 
-    process_subdir "$subdir"
+    process_subdir
 else
-    echo "Processing all subdirs is not implemented yet. Run 'git subdir -h' for usage."
+    subdirs="$(find_known_subdirs)"
+    if test -z "$subdirs"; then
+        echo "git-subdir syncs changes between a subdirectory and a Git repository." >&2
+        echo >&2
+        echo "** Nothing to do; no known subdirectories found." >&2
+        echo >&2
+        echo "(When run without <subdir> argument, git-subdir normally operates on" >&2
+        echo "all known embedded subdirectories. A subdirectory is added to your local" >&2
+        echo "git config the first time you run git-subdir on that subdirectory." >&2
+        echo >&2
+        echo "To add a subdirectory, use a command like:" >&2
+        echo >&2
+        echo "    git subdir [-I] <path> --url <repos-url> [--branch <branch>] [...]" >&2
+        echo >&2
+        echo "— see 'git subdir -h' for the full syntax.)" >&2
+    else
+        while read subdir; do
+            echo
+            echo "-----------------------------------------------------------------------------"
+            echo "$subdir"
+            echo
+            process_subdir
+        done < <(echo "$subdirs")
+    fi
 fi
